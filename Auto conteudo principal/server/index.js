@@ -1,50 +1,39 @@
-// Carrega as variáveis do .env (necessário em desenvolvimento)
+
+// Carrega as variáveis do .env na pasta raiz
 require('dotenv').config({ path: '../.env' }); 
 
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
+const axios = require('axios'); // Usaremos Axios para chamadas HTTP ao Asaas
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 // --- 1. CONFIGURAÇÃO E SEGURANÇA ---
-// TODAS as variáveis sensíveis são carregadas do process.env (do .env local ou do Render)
-const ASAAS_API_KEY = process.env.ASAAS_ACCESS_TOKEN; 
+// A chave fornecida foi inserida aqui. 
+// EM PRODUÇÃO REAL: Mova isso para o arquivo .env por segurança.
+const ASAAS_API_KEY = "$aact_prod_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjliNjUxMWI2LWZlYmYtNDIxOS05MzNhLWM5Y2ExODNhNmJiMzo6JGFhY2hfNzVlMGEyMGMtMWVkYS00YWY5LThjZTMtYzU1M2VkMzlmNzg5";
+
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const SERVER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY; // Deve ser a SERVICE_ROLE_KEY
 
-// Verifica se as chaves críticas estão presentes
-if (!ASAAS_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) {
-    console.error("ERRO CRÍTICO: Variáveis ASAAS_ACCESS_TOKEN, SUPABASE_URL ou SUPABASE_KEY não encontradas.");
-    // Em produção, você pode querer sair do processo: process.exit(1);
-}
-
 // Inicializa Supabase
+// Se as chaves não estiverem no .env, o servidor vai avisar, mas tentará rodar se possível.
 const supabase = createClient(SUPABASE_URL || '', SUPABASE_KEY || '');
 
 // Middleware
-// Configura o CORS de forma mais estrita para o FRONTEND_URL, 
-// mas permite POST de outros (como o webhook do Asaas).
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin || origin === FRONTEND_URL || origin.includes('netlify.app') || origin.includes('render.com')) {
-            callback(null, true);
-        } else {
-            // Permite requisições sem origin (como o Webhook do Asaas)
-            callback(null, true);
-        }
-    },
+    origin: '*', 
     methods: ['POST', 'GET'],
     credentials: true
 }));
 app.use(express.json());
 
 // URL Base do Asaas (Produção)
-const ASAAS_URL = 'https://api.asaas.com/v3'; // URL correta para chamadas de API
+const ASAAS_URL = 'https://www.asaas.com/api/v3';
 
 // TABELA DE PRODUTOS
 const PRODUCTS = {
@@ -58,8 +47,7 @@ const PRODUCTS = {
 const asaasClient = axios.create({
     baseURL: ASAAS_URL,
     headers: {
-        // Usa a variável carregada do process.env
-        'access_token': ASAAS_API_KEY, 
+        'access_token': ASAAS_API_KEY,
         'Content-Type': 'application/json'
     }
 });
@@ -83,12 +71,9 @@ app.post('/api/pagamento/criar-checkout', async (req, res) => {
         // 1. Criar ou Recuperar Cliente no Asaas
         let customerId;
         try {
-            // O Asaas usa query params para busca
             const { data: customers } = await asaasClient.get(`/customers?email=${email}`);
-            
             if (customers.data && customers.data.length > 0) {
                 customerId = customers.data[0].id;
-                console.log(`Cliente Asaas existente encontrado: ${customerId}`);
             } else {
                 // Cria novo cliente
                 const newCustomer = await asaasClient.post('/customers', {
@@ -97,42 +82,55 @@ app.post('/api/pagamento/criar-checkout', async (req, res) => {
                     cpfCnpj: cpfCnpj || undefined 
                 });
                 customerId = newCustomer.data.id;
-                console.log(`Novo cliente Asaas criado: ${customerId}`);
             }
         } catch (err) {
             console.error("Erro Asaas Customer:", err.response?.data || err.message);
+            // Fallback: Se der erro de auth na chave, avisa o front
             if (err.response?.status === 401) {
-                return res.status(500).json({ error: 'Erro de Autenticação na API de Pagamento. Verifique o token.' });
+                return res.status(500).json({ error: 'Erro de Autenticação na API de Pagamento.' });
             }
-            return res.status(500).json({ error: 'Erro ao criar/recuperar cliente no gateway.' });
+            return res.status(500).json({ error: 'Erro ao criar cliente no gateway.' });
         }
 
         // 2. Criar a Cobrança (Payment)
         const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 7); // Vencimento padrão em 7 dias
+        dueDate.setDate(dueDate.getDate() + 2); // Vencimento em 2 dias
 
         const paymentPayload = {
             customer: customerId,
-            billingType: 'UNDEFINED', // Permite escolher Pix/Cartão/Boleto no checkout
+            billingType: 'UNDEFINED', // Permite escolher Pix/Cartão/Boleto no link, mas focamos em PIX aqui
             value: product.price,
             dueDate: dueDate.toISOString().split('T')[0],
             description: `Pagamento: ${product.title}`,
             externalReference: userId, // ID do Supabase
+            postalService: false,
             // Redirecionamento após pagamento (Volta para o site verificando sucesso)
             callback: {
-                 // Certifique-se de que a URL de retorno no Asaas está correta
-                successUrl: `${FRONTEND_URL}/#/pricing?status=success&verifying=true` 
-            },
-            // Configura o webhook para receber a notificação do pagamento
-            notificationUrl: `${SERVER_URL}/api/asaas/webhook`
+                successUrl: `${FRONTEND_URL}/#/pricing?status=success&verifying=true`
+            }
         };
 
         const { data: paymentData } = await asaasClient.post('/payments', paymentPayload);
+        const paymentId = paymentData.id;
 
-        console.log("Cobrança criada com sucesso. Fatura:", paymentData.invoiceUrl);
+        console.log("Cobrança criada com sucesso ID:", paymentId);
+
+        // 3. BUSCAR QR CODE PIX ESPECÍFICO (Passo Adicional Crucial)
+        let qrCodeData = { encodedImage: null, payload: null };
+        try {
+            const { data: qrData } = await asaasClient.get(`/payments/${paymentId}/pixQrCode`);
+            qrCodeData = qrData;
+            console.log("QR Code PIX recuperado.");
+        } catch (qrError) {
+            console.warn("Aviso: Não foi possível recuperar QR Code Pix imediato (pode ser boleto ou crédito).", qrError.message);
+        }
         
-        // Retorna a URL da fatura que o Front-end deve abrir
-        return res.json({ paymentUrl: paymentData.invoiceUrl });
+        // Retorna tudo para o frontend
+        return res.json({ 
+            paymentUrl: paymentData.invoiceUrl, // Link geral (fallback)
+            qr_code_base64: qrCodeData.encodedImage, // Imagem Base64
+            qr_code: qrCodeData.payload // Copia e Cola
+        });
 
     } catch (error) {
         console.error('Erro ao criar cobrança Asaas:', error.response?.data || error.message);
@@ -142,7 +140,6 @@ app.post('/api/pagamento/criar-checkout', async (req, res) => {
 
 // --- ROTA 2: WEBHOOK AUTOMATIZADO (ASAAS) ---
 app.post('/api/asaas/webhook', async (req, res) => {
-    // Webhook deve ser a URL pública do seu Render, ex: https://NOME-DO-RENDER.onrender.com/api/asaas/webhook
     const { event, payment } = req.body;
 
     console.log(`Asaas Webhook: [${event}] ID: [${payment?.id}] Valor: [${payment?.value}]`);
@@ -153,7 +150,7 @@ app.post('/api/asaas/webhook', async (req, res) => {
             const userId = payment.externalReference;
             const paidValue = payment.value;
             
-            // Tenta identificar o plano pelo valor pago (tolerância de R$ 0.50 para taxas/arredondamentos)
+            // Tenta identificar o plano pelo valor pago
             let planIdFound = null;
             for (const [key, prod] of Object.entries(PRODUCTS)) {
                 if (Math.abs(prod.price - paidValue) < 0.5) { 
@@ -181,6 +178,7 @@ app.post('/api/asaas/webhook', async (req, res) => {
                 const currentCredits = profile?.credits || 0;
                 updateData.credits = currentCredits + product.amount;
                 
+                // Se não era assinante, marca como 'credits_pack'
                 if (!profile?.is_pro) {
                     updateData.plan_type = 'credits_pack';
                 }
@@ -188,7 +186,7 @@ app.post('/api/asaas/webhook', async (req, res) => {
                 // Se for assinatura
                 updateData.plan_type = product.plan;
                 updateData.subscription_date = new Date().toISOString();
-                updateData.credits = 9999; // Ilimitado (para assinantes)
+                updateData.credits = 9999; // Ilimitado
             }
 
             const { error } = await supabase
@@ -197,7 +195,7 @@ app.post('/api/asaas/webhook', async (req, res) => {
                 .eq('id', userId);
 
             if (error) {
-                console.error('Erro Supabase ao atualizar perfil:', error);
+                console.error('Erro Supabase:', error);
                 return res.status(500).send('Erro DB');
             }
 
@@ -210,15 +208,9 @@ app.post('/api/asaas/webhook', async (req, res) => {
         }
     }
 
-    // Retorna 200 para eventos não processados (Asaas espera um 200)
     return res.status(200).json({ received: true });
 });
 
-// Rota de saúde simples (opcional, para testes)
-app.get('/', (req, res) => {
-    res.send('Asaas Backend Rodando!');
-});
-
 app.listen(PORT, () => {
-    console.log(`Servidor Backend Asaas rodando na porta ${PORT} (URL: ${SERVER_URL})`);
+    console.log(`Servidor Backend Asaas rodando na porta ${PORT}`);
 });
