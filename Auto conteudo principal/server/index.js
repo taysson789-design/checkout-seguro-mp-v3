@@ -94,7 +94,7 @@ app.post('/api/pagamento/criar-checkout', async (req, res) => {
                 const newCustomer = await asaasClient.post('/customers', {
                     name: name || 'Cliente AutoConteúdo',
                     email: email,
-                    cpfCnpj: cpfCnpj: cpfCnpj || undefined 
+                    cpfCnpj: cpfCnpj || undefined 
                 });
                 customerId = newCustomer.data.id;
                 console.log(`Novo cliente Asaas criado: ${customerId}`);
