@@ -2,7 +2,7 @@
 import React from 'react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'gold';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
 }
@@ -15,25 +15,28 @@ export const Button: React.FC<ButtonProps> = ({
   className = '', 
   ...props 
 }) => {
-  const baseStyles = "inline-flex items-center justify-center font-bold tracking-tight transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl active:scale-95 relative overflow-hidden";
+  const baseStyles = "inline-flex items-center justify-center font-bold tracking-tight transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl active:scale-95 relative overflow-hidden";
   
-  // Variantes atualizadas com Gradientes Fortes
   const variants = {
-    // Primary agora é um gradiente vivo e animado
-    primary: "bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 bg-[length:200%_auto] hover:bg-right text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 border border-transparent btn-shine hover:-translate-y-0.5 animate-gradient-x",
+    // Primary: Neon Indigo/Purple glow
+    primary: "bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 bg-[length:200%_auto] hover:bg-right text-white shadow-[0_0_20px_rgba(99,102,241,0.5)] hover:shadow-[0_0_30px_rgba(99,102,241,0.7)] border border-white/10 btn-shine animate-gradient-x",
     
-    // Secondary mantém o contraste escuro
-    secondary: "bg-slate-900 text-white hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-500/20 focus:ring-slate-500 border border-transparent hover:-translate-y-0.5",
+    // Gold: For Master Actions
+    gold: "bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 shadow-[0_0_20px_rgba(251,191,36,0.5)] hover:shadow-[0_0_30px_rgba(251,191,36,0.7)] btn-shine hover:-translate-y-0.5",
+
+    // Secondary: Dark Glass
+    secondary: "bg-white/10 text-white hover:bg-white/20 hover:shadow-lg border border-white/10 backdrop-blur-md",
     
-    outline: "border-2 border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-indigo-300 hover:text-indigo-600 focus:ring-indigo-500 shadow-sm hover:shadow-md",
+    // Outline: For minimal actions
+    outline: "border border-white/20 bg-transparent text-slate-300 hover:bg-white/5 hover:text-white hover:border-white/40",
     
-    ghost: "text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 focus:ring-slate-500 bg-transparent"
+    ghost: "text-slate-400 hover:bg-white/5 hover:text-white bg-transparent"
   };
 
   const sizes = {
     sm: "h-9 px-4 text-xs",
-    md: "h-12 px-6 text-sm", // Aumentado um pouco para facilitar o clique
-    lg: "h-16 px-10 text-lg" // Botões grandes para CTA
+    md: "h-12 px-6 text-sm", 
+    lg: "h-16 px-10 text-lg" 
   };
 
   return (

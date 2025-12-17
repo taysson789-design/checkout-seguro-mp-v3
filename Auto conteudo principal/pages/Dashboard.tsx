@@ -1,420 +1,349 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { DOCUMENT_TEMPLATES, ICONS } from '../constants';
-import { ArrowRight, Crown, Sparkles, Lock, Zap, Layout, Play } from 'lucide-react';
+import { ArrowRight, ArrowDown, Crown, Sparkles, Plus, Lock, Loader2, Aperture, Command, Layers, Flame, CheckCircle2, Star, Zap, CreditCard, Award, Briefcase } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
-
-// Componente para revelar seções ao rolar (Scroll Reveal)
-const RevealSection: React.FC<{ children: React.ReactNode; delay?: number }> = ({ children, delay = 0 }) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const domRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      entries => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) setIsVisible(true);
-        });
-      },
-      { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
-    );
-
-    const { current } = domRef;
-    if (current) observer.observe(current);
-
-    return () => {
-      if (current) observer.unobserve(current);
-    };
-  }, []);
-
-  return (
-    <div
-      ref={domRef}
-      className={`transition-all duration-1000 ease-out transform ${
-        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
-      }`}
-      style={{ transitionDelay: `${delay}ms` }}
-    >
-      {children}
-    </div>
-  );
-};
-
-// 3D Decorative Object Component
-const FloatingCube: React.FC<{ size: number; top: string; left: string; delay?: string }> = ({ size, top, left, delay = '0s' }) => (
-    <div className="absolute float-shape scene-3d opacity-40 hover:opacity-80 transition-opacity duration-500 pointer-events-none" style={{ top, left, animationDelay: delay }}>
-        <div className="cube-container" style={{ width: size, height: size }}>
-            <div className="cube-face cube-face-front" style={{ width: size, height: size, transform: `rotateY(0deg) translateZ(${size/2}px)` }}></div>
-            <div className="cube-face cube-face-back" style={{ width: size, height: size, transform: `rotateY(180deg) translateZ(${size/2}px)` }}></div>
-            <div className="cube-face cube-face-right" style={{ width: size, height: size, transform: `rotateY(90deg) translateZ(${size/2}px)` }}></div>
-            <div className="cube-face cube-face-left" style={{ width: size, height: size, transform: `rotateY(-90deg) translateZ(${size/2}px)` }}></div>
-            <div className="cube-face cube-face-top" style={{ width: size, height: size, transform: `rotateX(90deg) translateZ(${size/2}px)` }}></div>
-            <div className="cube-face cube-face-bottom" style={{ width: size, height: size, transform: `rotateX(-90deg) translateZ(${size/2}px)` }}></div>
-        </div>
-    </div>
-);
+import { omniCoreGenerate } from '../services/geminiService';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [siteConfig, setSiteConfig] = useState({
-    promoBadge: "Tecnologia Pollinations AI",
-    heroTitle: "Sua Criatividade <br/><span class='text-gradient-animated'>Sem Limites.</span>",
-    heroSubtitle: "De freelancers a grandes agências: crie sites, imagens e copys profissionais em segundos com IA Open Source."
-  });
+  const [activeCategory, setActiveCategory] = useState<string>('All');
 
-  useEffect(() => {
-    const fetchConfig = async () => {
-      const { data, error } = await supabase.from('site_config').select('*').limit(1).single();
-      if (data && !error) {
-        let badge = data.promo_badge || "Tecnologia Pollinations AI";
-        let title = data.hero_title || "Sua Criatividade <br/><span class='text-gradient-animated'>Sem Limites.</span>";
-        let subtitle = data.hero_subtitle || "De freelancers a grandes agências: crie sites, imagens e copys profissionais em segundos com IA Open Source.";
+  // Omni Core States
+  const [omniInput, setOmniInput] = useState('');
+  const [omniImages, setOmniImages] = useState<string[]>([]);
+  const [omniMode, setOmniMode] = useState<'creative' | 'analytical' | 'executive'>('executive');
+  const [omniResponse, setOmniResponse] = useState('');
+  const [isOmniLoading, setIsOmniLoading] = useState(false);
+  const omniFileRef = useRef<HTMLInputElement>(null);
+  const omniResultRef = useRef<HTMLDivElement>(null);
 
-        if (badge.toLowerCase().includes("gemini") || badge.includes("3.0")) {
-            badge = "Tecnologia Pollinations AI";
-        }
-        if (title.toLowerCase().includes("gemini")) {
-            title = "Sua Criatividade <br/><span class='text-gradient-animated'>Sem Limites.</span>";
-        }
-        if (subtitle.toLowerCase().includes("gemini")) {
-            subtitle = "De freelancers a grandes agências: crie sites, imagens e copys profissionais em segundos com IA Open Source.";
-        }
+  const categories = ['All', 'Curriculo', 'Marketing', 'Business', 'Jurídico', 'Criativo'];
 
-        setSiteConfig({
-          promoBadge: badge,
-          heroTitle: title,
-          heroSubtitle: subtitle
-        });
-      }
-    };
-    fetchConfig();
-  }, []);
+  const filteredTemplates = activeCategory === 'All' 
+    ? DOCUMENT_TEMPLATES 
+    : DOCUMENT_TEMPLATES.filter(t => t.category === activeCategory);
 
-  const premiumTemplates = DOCUMENT_TEMPLATES.filter(t => 
-    ['launch-agent-360', 'website-generator', 'ai-image-generator', 'banner-pro'].includes(t.id)
-  );
-  
-  const standardTemplates = DOCUMENT_TEMPLATES.filter(t => 
-    !['launch-agent-360', 'website-generator', 'ai-image-generator', 'banner-pro'].includes(t.id)
-  );
+  const isMaster = user?.planType === 'master_monthly' || user?.planType === 'yearly' || user?.isAdmin;
+  const isPro = user?.isPro || isMaster;
 
-  const isMasterUser = user?.planType === 'master_monthly' || user?.planType === 'yearly' || user?.isAdmin;
-  const isSubscriber = user?.isPro || isMasterUser;
-  const isFreePlan = !user?.isPro && (!user?.planType || user?.planType === 'free');
-
-  const handleServiceClick = (e: React.MouseEvent, templateId: string) => {
-    const isMasterOnly = templateId === 'launch-agent-360';
-    const isLockedForFree = templateId === 'website-generator'; 
-    
-    if (isMasterOnly && !isMasterUser) {
-        e.preventDefault();
-        navigate('/pricing');
-        return;
-    }
-    if (isLockedForFree && isFreePlan) {
-        e.preventDefault();
-        alert("A criação de Sites completos é exclusiva para membros Pro. Faça upgrade para desbloquear.");
-        navigate('/pricing');
-        return;
-    }
-    if (!isSubscriber && (!user?.credits || user.credits <= 0)) {
-        e.preventDefault();
-        navigate('/pricing');
-        return;
-    }
-  };
-
-  const renderCard = (template: typeof DOCUMENT_TEMPLATES[0], isPremiumSection: boolean) => {
+  // --- RENDERIZAÇÃO DO CARD ---
+  const renderCard = (template: typeof DOCUMENT_TEMPLATES[0]) => {
     const Icon = ICONS[template.icon];
-    const isMasterOnly = template.id === 'launch-agent-360';
-    const isLockedForFree = template.id === 'website-generator';
-    
-    let isLocked = false;
-    let lockLabel = "";
-    
-    if (isMasterOnly && !isMasterUser) {
-        isLocked = true;
-        lockLabel = "Exclusivo Master";
-    } else if (isLockedForFree && isFreePlan) {
-        isLocked = true;
-        lockLabel = "Apenas Pro/Master";
-    } else if (!isSubscriber && (!user?.credits || user.credits <= 0)) {
-        isLocked = true;
-        lockLabel = "Sem Créditos";
-    }
+    const isElite = template.minPlan === 'master';
+    const isPremium = template.minPlan === 'pro';
+    const isCV = template.category === 'Curriculo';
+    const isNew = ['viral-ugc-engine', 'neural-data-analyst', 'cv-executive', 'cv-creative'].includes(template.id);
+    const hasAccess = (isElite && isMaster) || (isPremium && isPro) || (!template.minPlan && template.category !== 'Curriculo');
+    const hasPrice = !!template.oneTimePrice;
+
+    // Definição de Cores por Nível
+    const glowType = isElite ? 'glow-master' : isPremium ? 'glow-pro' : 'glow-free';
+    const accentColor = isElite ? 'text-amber-400' : isPremium ? 'text-indigo-400' : 'text-cyan-400';
+    const badgeBg = isElite ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : isPremium ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400' : 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400';
+
+    // Highlight visual for CVs
+    const containerClasses = isCV 
+        ? `bg-gradient-to-br from-slate-900 via-[#0f111a] to-slate-900 border-indigo-500/30 shadow-[0_0_30px_rgba(79,70,229,0.15)] ring-1 ring-indigo-500/50 hover:scale-[1.02]`
+        : `cyber-card ${glowType}`;
 
     return (
         <Link 
           key={template.id} 
           to={`/generate/${template.id}`}
-          onClick={(e) => handleServiceClick(e, template.id)}
-          className={`group relative flex flex-col h-full rounded-3xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-2 card-3d-hover ${
-            isPremiumSection 
-                ? 'bg-[#0f172a] border border-indigo-500/30 shadow-2xl shadow-indigo-900/20' 
-                : 'bg-white border border-slate-100 hover:border-indigo-200 shadow-xl shadow-slate-200/50'
-          }`}
+          className="group block h-full w-full active:scale-[0.98] transition-all duration-300"
         >
-           {/* Efeito de Borda Brilhante no Hover (Pseudo-element Gradient) */}
-           <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 -z-10 ${isPremiumSection ? 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500' : 'bg-gradient-to-br from-blue-400 to-indigo-400'}`} style={{ padding: '2px' }}>
-               <div className={`h-full w-full rounded-[22px] ${isPremiumSection ? 'bg-[#0f172a]' : 'bg-white'}`}></div>
-           </div>
+          <div className={`${containerClasses} h-full rounded-[20px] md:rounded-[24px] p-5 md:p-6 flex flex-col justify-between relative overflow-hidden`}>
+               
+               {/* Background Gradient Spot */}
+               <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full blur-[60px] opacity-0 group-hover:opacity-40 transition-opacity duration-500 ${isElite ? 'bg-amber-500' : isPremium ? 'bg-indigo-600' : 'bg-cyan-500'}`}></div>
 
-           {/* Internal ambient glow for Premium */}
-           {isPremiumSection && (
-              <>
-                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-600/10 to-purple-600/10 opacity-50 group-hover:opacity-100 transition-opacity duration-500"></div>
-                 {/* Moving sheen */}
-                 <div className="absolute top-0 -left-[100%] w-[200%] h-full bg-gradient-to-r from-transparent via-white/5 to-transparent skew-x-12 group-hover:animate-[shimmer_1.5s_infinite]"></div>
-              </>
-           )}
-
-           <div className="p-6 md:p-8 flex flex-col h-full relative z-10 transform preserve-3d">
-               {/* Header: Icon + Badge */}
-               <div className="flex justify-between items-start mb-6">
-                   <div className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center text-white shadow-lg transform group-hover:translate-z-10 transition-all duration-300 ${template.color}`}>
-                       {Icon && <Icon size={28} className="md:w-8 md:h-8" strokeWidth={1.5} />}
+               {/* HEADER: Icon + Badges */}
+               <div className="flex justify-between items-start mb-5 relative z-10">
+                   <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center shadow-lg transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 bg-[#0f111a] border border-white/5`}>
+                       {Icon && <Icon size={24} strokeWidth={1.5} className={accentColor} />}
                    </div>
                    
-                   {isLocked ? (
-                       <div className="flex items-center gap-1 bg-slate-900/90 backdrop-blur-md px-2.5 py-1.5 rounded-full border border-amber-500/50 shadow-lg shadow-amber-500/10">
-                           <Lock size={12} className="text-amber-400" />
-                           <span className="text-[9px] md:text-[10px] font-bold text-amber-400 uppercase tracking-wide whitespace-nowrap">{lockLabel}</span>
-                       </div>
-                   ) : isMasterOnly ? (
-                       <div className="relative">
-                          <span className="absolute inset-0 animate-ping opacity-75 inline-flex h-full w-full rounded-full bg-amber-400"></span>
-                          <div className="relative bg-gradient-to-r from-amber-300 to-yellow-500 text-slate-900 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-lg shadow-amber-500/40">
-                              <Crown size={12} fill="currentColor" /> ELITE
-                          </div>
-                       </div>
-                   ) : isPremiumSection ? (
-                       <div className="bg-gradient-to-r from-indigo-500 to-violet-500 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg shadow-indigo-500/30">
-                           PRO
-                       </div>
-                   ) : null}
+                   <div className="flex flex-col items-end gap-2">
+                        {isNew && (
+                            <span className="flex items-center gap-1 bg-red-600 text-white px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider animate-pulse shadow-[0_0_10px_#dc2626]">
+                                <Flame size={10} fill="currentColor" /> Novo
+                            </span>
+                        )}
+                        <div className={`px-2 py-1 rounded border text-[9px] font-black uppercase tracking-wider flex items-center gap-1 ${badgeBg}`}>
+                            {isElite ? <Crown size={10} /> : isPremium ? <Star size={10} /> : <Zap size={10} />}
+                            {isElite ? 'Master' : isPremium ? 'Pro' : 'Free'}
+                        </div>
+                   </div>
                </div>
 
-               {/* Content */}
-               <h3 className={`font-heading font-bold text-xl md:text-2xl mb-3 leading-tight ${isPremiumSection ? 'text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 group-hover:from-white group-hover:to-white' : 'text-slate-900 group-hover:text-indigo-600 transition-colors'}`}>
-                   {template.title}
-               </h3>
-               <p className={`text-sm leading-relaxed mb-6 flex-grow font-medium ${isPremiumSection ? 'text-slate-400 group-hover:text-slate-300' : 'text-slate-500'}`}>
-                   {template.description}
-               </p>
+               {/* BODY: Content */}
+               <div className="flex-grow flex flex-col relative z-10">
+                   <div className="flex flex-col gap-1 mb-3">
+                       <h3 className="font-hero font-bold text-lg md:text-xl leading-tight text-white group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-white group-hover:to-slate-400 transition-all">
+                           {template.title}
+                       </h3>
 
-               {/* Action Footer */}
-               <div className={`mt-auto pt-5 border-t ${isPremiumSection ? 'border-white/10' : 'border-slate-100'}`}>
-                   {isLocked ? (
-                       <div className="flex items-center text-amber-500 text-sm font-bold group-hover:translate-x-1 transition-transform">
-                           <Sparkles size={16} className="mr-2 animate-pulse" />
-                           Desbloquear
-                           <ArrowRight size={16} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-                       </div>
-                   ) : (
-                       <button className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all btn-shine ${
-                           isPremiumSection 
-                             ? 'bg-white text-slate-900 hover:bg-indigo-50' 
-                             : 'bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-600 group-hover:from-indigo-600 group-hover:to-violet-600 group-hover:text-white'
-                       }`}>
-                           Criar Agora
-                           <Zap size={16} className={isPremiumSection ? "text-indigo-600" : "fill-current"} />
-                       </button>
-                   )}
+                       {/* PREÇO DESTACADO (Se existir e usuário não for Pro) */}
+                       {hasPrice && !isPro && (
+                           <div className="self-start mt-1 bg-emerald-600 text-white border border-emerald-400 px-3 py-1 rounded-lg text-xs font-black whitespace-nowrap shadow-[0_0_15px_rgba(16,185,129,0.4)] flex items-center gap-1.5 transform group-hover:scale-105 transition-transform origin-left">
+                               <CreditCard size={12} strokeWidth={3} />
+                               R$ {template.oneTimePrice?.toFixed(2).replace('.', ',')}
+                           </div>
+                       )}
+                   </div>
+                   
+                   <p className="text-sm text-slate-400 font-medium leading-relaxed mb-4 md:mb-6 line-clamp-3">
+                       {template.description}
+                   </p>
                </div>
-           </div>
+
+               {/* FOOTER: Action */}
+               <div className="mt-auto border-t border-white/5 pt-4 flex items-center justify-between relative z-10">
+                   <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest group-hover:text-slate-500 transition-colors">
+                      {template.category}
+                   </span>
+                   
+                   <div className={`flex items-center gap-2 text-[10px] font-black transition-all duration-300 transform translate-y-0 group-hover:translate-x-1 ${hasAccess ? 'text-emerald-400' : 'text-slate-500'}`}>
+                       {hasAccess ? (
+                           <>ACESSAR <ArrowRight size={12} /></>
+                       ) : (
+                           <><Lock size={12} /> {hasPrice ? 'COMPRAR' : 'BLOQUEADO'}</>
+                       )}
+                   </div>
+               </div>
+          </div>
         </Link>
     );
   };
 
+  const handleOmniSubmit = async () => {
+      if (!isPro) { navigate('/pricing'); return; }
+      if (!omniInput.trim() && omniImages.length === 0) return;
+      setIsOmniLoading(true);
+      setOmniResponse('');
+      try {
+          const result = await omniCoreGenerate(omniInput, omniImages, omniMode);
+          setOmniResponse(result);
+          setTimeout(() => { omniResultRef.current?.scrollIntoView({ behavior: 'smooth' }); }, 100);
+      } catch (error) { setOmniResponse("Erro no Omni."); } finally { setIsOmniLoading(false); }
+  };
+
+  const handleOmniFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []) as File[];
+      files.forEach(file => {
+          const reader = new FileReader();
+          reader.onloadend = () => setOmniImages(prev => [...prev, reader.result as string]);
+          reader.readAsDataURL(file);
+      });
+  };
+
   return (
-    <div className="min-h-screen overflow-x-hidden">
+    <div className="w-full">
       
-      {/* FREE PLAN ALERT - Gradient Border */}
-      {isFreePlan && user && (
-         <div className="max-w-7xl mx-auto px-4 mt-4 animate-fade-in flex justify-center">
-            <div className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 p-[1px] rounded-full shadow-lg">
-                <div className="bg-white rounded-full px-5 py-2 flex flex-wrap justify-center items-center gap-2 text-xs sm:text-sm">
-                    <span className="font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 flex items-center gap-1">
-                        <Zap size={14} className="text-purple-600 fill-purple-600" /> Grátis:
-                    </span>
-                    <span className="text-slate-700 font-bold">
-                        {user.credits} gerações restantes.
-                    </span>
-                    <div className="hidden sm:block h-3 w-px bg-slate-300"></div>
-                    <Link to="/pricing" className="text-indigo-600 font-bold hover:underline">
-                        Faça Upgrade
-                    </Link>
-                </div>
-            </div>
-         </div>
-      )}
-      
-      {/* 
-        HERO SECTION: REFORMULADA (3D UNIVERSE)
-        Fundo escuro profundo com "Aurora" neon vibrante e OBJETOS 3D FLUTUANTES.
-      */}
-      <div className="relative max-w-[1400px] mx-auto mt-4 md:mt-6 mb-12 md:mb-20 px-2 md:px-4">
-        <div className="relative rounded-[2rem] md:rounded-[3rem] overflow-hidden bg-[#020617] shadow-[0_0_80px_-20px_rgba(124,58,237,0.3)] border border-indigo-500/20 isolate group scene-3d">
-            
-            {/* Animated Background Layers (More vibrant) */}
-            <div className="absolute inset-0 bg-grid-pattern opacity-10 animate-[pulse_8s_infinite]"></div>
-            
-            {/* Blobs de Cor Intensa (Reduzidos no mobile) */}
-            <div className="absolute -top-20 -left-10 md:-top-40 md:-left-20 w-[300px] md:w-[500px] h-[300px] md:h-[500px] bg-indigo-600 rounded-full mix-blend-screen filter blur-[80px] md:blur-[120px] opacity-30 animate-blob"></div>
-            <div className="absolute top-0 right-0 w-[300px] md:w-[500px] h-[300px] md:h-[500px] bg-fuchsia-600 rounded-full mix-blend-screen filter blur-[80px] md:blur-[120px] opacity-20 animate-blob animation-delay-2000"></div>
-            <div className="absolute -bottom-20 left-[20%] w-[350px] md:w-[600px] h-[350px] md:h-[600px] bg-blue-600 rounded-full mix-blend-screen filter blur-[80px] md:blur-[120px] opacity-20 animate-blob animation-delay-4000"></div>
+      {/* --- HERO SECTION MASSIVA --- */}
+      <div className="relative min-h-[90vh] flex flex-col justify-center items-center text-center px-4 pt-28 pb-16 md:pt-32 md:pb-20">
+          
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] md:w-[900px] md:h-[900px] bg-indigo-500/10 rounded-full blur-[80px] md:blur-[120px] pointer-events-none -z-10"></div>
 
-            {/* 3D OBJECTS INJECTION (Menores no mobile) */}
-            <div className="hidden md:block">
-                <FloatingCube size={40} top="20%" left="10%" delay="0s" />
-                <FloatingCube size={60} top="60%" left="85%" delay="2s" />
-                <FloatingCube size={30} top="80%" left="20%" delay="4s" />
-            </div>
+          <div className="relative z-10 animate-fade-in-up max-w-6xl mx-auto flex flex-col items-center">
+              
+              <div className="inline-flex items-center gap-2 md:gap-3 px-4 py-2 md:px-6 md:py-2.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-indigo-300 text-[9px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.3em] mb-6 md:mb-10 hover:bg-white/10 transition-colors shadow-[0_0_30px_rgba(99,102,241,0.2)]">
+                  <Sparkles size={12} className="text-amber-400 animate-pulse" /> Inteligência Artificial de Elite
+              </div>
+              
+              <h1 className="font-hero text-4xl sm:text-5xl md:text-7xl lg:text-9xl font-black text-white mb-6 md:mb-8 tracking-tighter leading-[1] md:leading-[0.95] drop-shadow-2xl">
+                  A TECNOLOGIA DOS <br/>
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-300 to-amber-400 animate-gradient-x text-glow-gold">BILIONÁRIOS.</span>
+              </h1>
+              
+              <p className="text-base sm:text-lg md:text-2xl text-slate-300 max-w-xs sm:max-w-2xl md:max-w-3xl mx-auto mb-10 md:mb-12 leading-relaxed font-light mix-blend-plus-lighter">
+                  <span className="text-white font-bold block mb-1 md:mb-2">Agora na palma da sua mão.</span>
+                  Da estratégia de vendas ao jurídico blindado. Acessibilidade para todos, poder para quem quer vencer.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row justify-center gap-4 md:gap-6 items-center w-full mt-2">
+                   <button onClick={() => document.getElementById('services')?.scrollIntoView({behavior: 'smooth'})} className="group btn-neon relative w-full sm:w-auto px-8 py-4 md:px-12 md:py-6 rounded-full font-black text-white text-sm md:text-lg tracking-wide hover:scale-105 transition-transform shadow-2xl shadow-indigo-900/50">
+                       <span className="relative z-10 flex items-center justify-center gap-3">EXPLORAR ARSENAL <ArrowDown size={18} className="group-hover:translate-y-1 transition-transform"/></span>
+                   </button>
+                   {!isPro && (
+                       <button onClick={() => navigate('/pricing')} className="w-full sm:w-auto px-8 py-4 md:px-12 md:py-6 rounded-full font-bold text-sm md:text-lg text-white border border-white/20 hover:bg-white/5 hover:border-amber-400/50 hover:text-amber-300 transition-all flex items-center justify-center gap-2 backdrop-blur-sm">
+                           <Crown size={18} className="text-amber-400 animate-pulse" fill="currentColor"/> ACESSO VIP
+                       </button>
+                   )}
+              </div>
 
-            {/* Content Container */}
-            <div className="relative z-10 py-12 px-4 sm:px-12 md:py-32 md:px-20 text-center flex flex-col items-center">
-                
-                {/* Floating Badge (Glassmorphism + Border Gradient) */}
-                <div className="mb-6 md:mb-8 orb-float">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 md:px-5 md:py-2.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl shadow-[0_0_30px_rgba(168,85,247,0.4)] hover:scale-105 transition-transform cursor-default ring-1 ring-white/20">
-                        <span className="relative flex h-2.5 w-2.5 md:h-3 md:w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-fuchsia-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 md:h-3 md:w-3 bg-fuchsia-500"></span>
-                        </span>
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 via-fuchsia-200 to-pink-200 text-xs md:text-sm font-bold tracking-wide drop-shadow-sm truncate max-w-[250px] md:max-w-none">{siteConfig.promoBadge}</span>
-                    </div>
-                </div>
-
-                {/* Main Headline - Bigger and Gradient */}
-                <h1 
-                    className="font-heading text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-black text-white leading-[1.1] md:leading-[1.05] tracking-tight mb-6 md:mb-8 drop-shadow-2xl px-2"
-                    dangerouslySetInnerHTML={{ __html: siteConfig.heroTitle }}
-                />
-
-                <p className="text-base md:text-2xl text-slate-300 max-w-3xl mx-auto mb-8 md:mb-12 font-light leading-relaxed px-4">
-                    {siteConfig.heroSubtitle}
-                </p>
-
-                {/* Call to Actions - "Click Machines" */}
-                <div className="flex flex-col sm:flex-row gap-4 md:gap-5 w-full justify-center items-center perspective-1000 px-4">
-                    <button 
-                        onClick={() => document.getElementById('hub-section')?.scrollIntoView({ behavior: 'smooth' })}
-                        className="relative group btn-shine bg-white text-slate-900 font-black text-lg md:text-xl py-4 md:py-5 px-8 md:px-12 rounded-2xl shadow-[0_0_40px_-10px_rgba(255,255,255,0.5)] hover:scale-105 hover:shadow-[0_0_60px_-10px_rgba(255,255,255,0.7)] transition-all duration-300 flex items-center gap-3 w-full sm:w-auto justify-center overflow-hidden border-2 border-transparent hover:border-indigo-100 transform hover:rotate-x-12"
-                    >
-                        <Play size={20} className="fill-slate-900 group-hover:fill-indigo-600 transition-colors md:w-6 md:h-6" />
-                        <span className="relative z-10 group-hover:text-indigo-600 transition-colors">COMEÇAR AGORA</span>
-                    </button>
-
-                    <Link to="/pricing" className="w-full sm:w-auto">
-                        <button className="w-full group flex items-center justify-center gap-3 bg-white/5 hover:bg-white/10 text-white font-medium py-4 md:py-5 px-8 md:px-10 rounded-2xl border border-white/10 hover:border-amber-400/50 transition-all text-lg backdrop-blur-sm">
-                            <Crown className="w-5 h-5 md:w-6 md:h-6 text-amber-400 group-hover:rotate-12 transition-transform drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]" />
-                            Ver Planos
-                        </button>
-                    </Link>
-                </div>
-            </div>
-        </div>
+              <div className="mt-16 md:mt-20 flex flex-wrap justify-center gap-4 md:gap-16 opacity-40 grayscale mix-blend-screen px-4">
+                  {['Gemini 2.0 Flash', 'Processamento Neural', 'Dados Criptografados', '24/7'].map((tech, i) => (
+                      <div key={i} className="flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-white whitespace-nowrap">
+                          <CheckCircle2 size={12} /> {tech}
+                      </div>
+                  ))}
+              </div>
+          </div>
       </div>
 
-      <div id="hub-section" className="h-10 md:h-20"></div>
-
-      {/* 
-         CONTENT SECTIONS
-      */}
-      <div className="max-w-7xl mx-auto pb-20 px-4">
-          
-          {/* PREMIUM / ELITE TOOLS */}
-          <RevealSection>
-             <div className="mb-16 md:mb-24 relative isolate">
-                {/* Background glow for this section */}
-                <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/5 to-fuchsia-500/5 blur-3xl -z-10 rounded-full transform scale-y-50"></div>
-                
-                <div className="flex flex-col md:flex-row items-center justify-between mb-8 md:mb-12 gap-6">
-                   <div className="flex items-center gap-4 text-center md:text-left flex-col md:flex-row w-full md:w-auto">
-                       <div className="w-14 h-14 md:w-16 md:h-16 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 border border-slate-800 relative overflow-hidden group mx-auto md:mx-0">
-                           <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500 to-fuchsia-500 opacity-20 group-hover:opacity-30 transition-opacity"></div>
-                           <Crown size={28} className="text-amber-400 animate-pulse-soft relative z-10 md:w-8 md:h-8" fill="#fbbf24" />
-                       </div>
-                       <div>
-                           <h2 className="text-3xl md:text-4xl font-black text-slate-900 font-heading tracking-tight">
-                               <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-fuchsia-600">Ferramentas Elite</span>
-                           </h2>
-                           <p className="text-slate-500 font-medium text-base md:text-lg">O poder máximo da IA generativa.</p>
-                       </div>
+      {/* --- SERVICES GRID FULL WIDTH (ALINHADO) --- */}
+      <div id="services" className="w-full px-4 md:px-12 lg:px-24 py-16 md:py-24 bg-black/20 backdrop-blur-sm border-t border-white/5">
+          <div className="max-w-[1600px] mx-auto">
+              <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 md:mb-16 gap-6 md:gap-8 border-b border-white/5 pb-8">
+                   <div className="text-center md:text-left">
+                       <h2 className="text-3xl md:text-5xl font-hero font-black text-white flex flex-col md:flex-row items-center md:items-center gap-2 md:gap-4 tracking-tight mb-2 md:mb-4 justify-center md:justify-start">
+                           <Layers className="text-indigo-500 w-8 h-8 md:w-12 md:h-12" /> ARSENAL COMPLETO
+                       </h2>
+                       <p className="text-slate-400 text-sm md:text-xl max-w-2xl mx-auto md:mx-0">
+                           Ferramentas de alta performance organizadas por objetivo. Selecione seu módulo.
+                       </p>
                    </div>
                    
-                   {!isSubscriber && (
-                       <Link to="/pricing" className="flex items-center gap-2 text-indigo-600 font-bold hover:text-fuchsia-600 transition-colors bg-white px-4 py-2 rounded-full shadow-sm hover:shadow-md border border-indigo-100 text-sm">
-                           Desbloquear tudo <ArrowRight size={16} />
-                       </Link>
+                   <div className="flex flex-wrap justify-center md:justify-end gap-2">
+                       {categories.map(cat => (
+                           <button 
+                               key={cat}
+                               onClick={() => setActiveCategory(cat)}
+                               className={`px-3 py-2 md:px-5 md:py-2.5 rounded-xl text-[9px] md:text-xs font-black uppercase tracking-wider transition-all border ${activeCategory === cat ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_20px_rgba(79,70,229,0.5)]' : 'bg-white/5 text-slate-400 border-white/5 hover:bg-white/10 hover:text-white'}`}
+                           >
+                               {cat}
+                           </button>
+                       ))}
+                   </div>
+              </div>
+
+              {/* SECTION: CURRÍCULOS DESTAQUE (Se estiver em All ou Curriculo) */}
+              {(activeCategory === 'All' || activeCategory === 'Curriculo') && (
+                  <div className="mb-12">
+                      <div className="flex items-center gap-3 mb-6">
+                           <div className="w-10 h-10 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/30">
+                              <Briefcase size={20} fill="currentColor" />
+                           </div>
+                           <h3 className="text-2xl font-bold text-white tracking-tight">Carreira & Currículos de Elite</h3>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                           {DOCUMENT_TEMPLATES.filter(t => t.category === 'Curriculo').map(renderCard)}
+                      </div>
+                      
+                      {/* Divider se não for apenas categoria curriculo */}
+                      {activeCategory === 'All' && <div className="h-px bg-white/5 my-12"></div>}
+                  </div>
+              )}
+
+              {/* GRID GERAL (Restante) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 md:gap-8 auto-rows-fr">
+                  {filteredTemplates.filter(t => t.category !== 'Curriculo').map(renderCard)}
+              </div>
+          </div>
+      </div>
+
+      {/* --- NÚCLEO OMNI --- */}
+      <div className="relative py-20 md:py-40 border-t border-white/5 bg-[#010208]">
+          <div className="max-w-7xl mx-auto px-4 relative z-10">
+              <div className="text-center mb-12 md:mb-20">
+                  <div className="inline-flex items-center justify-center w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-[2rem] bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-500/50 mb-6 md:mb-8 shadow-[0_0_80px_rgba(99,102,241,0.3)] animate-float">
+                      <Aperture size={32} className="md:w-12 md:h-12 text-indigo-400" />
+                  </div>
+                  <h2 className="text-4xl md:text-7xl lg:text-8xl font-black mb-4 md:mb-6 tracking-tighter text-white">
+                      NÚCLEO <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-500 animate-gradient-x text-glow">OMNI</span>
+                  </h2>
+                  <p className="text-indigo-200/50 text-base md:text-2xl max-w-3xl mx-auto font-light">
+                      Acesso direto à rede neural bruta. Sem templates. Poder ilimitado.
+                  </p>
+              </div>
+
+              <div className="glass-panel rounded-2xl md:rounded-3xl p-1 relative border border-indigo-500/20 shadow-2xl overflow-hidden ring-1 ring-white/5 max-w-5xl mx-auto">
+                   
+                   {!isPro && (
+                       <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center text-center p-6">
+                           <Lock size={32} className="text-slate-500 mb-4 md:mb-6" />
+                           <h3 className="text-xl md:text-3xl font-bold mb-4 text-white">Acesso Restrito Classe Elite</h3>
+                           <button onClick={() => navigate('/pricing')} className="btn-neon text-white px-8 py-3 md:px-10 md:py-4 rounded-full font-black tracking-wide text-xs md:text-sm">
+                               DESBLOQUEAR ACESSO
+                           </button>
+                       </div>
                    )}
-                </div>
-                
-                {/* Grid Responsivo: 1 col no mobile, 2 no tablet, 3 no desktop */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 scene-3d">
-                   {premiumTemplates.map(template => renderCard(template, true))}
-                </div>
-             </div>
-          </RevealSection>
 
-          {/* STANDARD TOOLS */}
-          <RevealSection delay={200}>
-             <div className="mb-16 md:mb-24">
-                <div className="flex items-center gap-4 mb-8 md:mb-10 border-b border-slate-200 pb-6">
-                   <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl text-white shadow-lg shadow-blue-500/30">
-                       <Layout size={20} className="md:w-6 md:h-6" />
+                   <div className="bg-[#0c0e16] rounded-xl md:rounded-[1.4rem] p-4 md:p-10 min-h-[400px] md:min-h-[500px] flex flex-col">
+                       {/* Terminal Header */}
+                       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 md:mb-8 border-b border-white/5 pb-4 gap-4 w-full">
+                           <div className="flex gap-2">
+                               <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-red-500 shadow-[0_0_10px_red]"></div>
+                               <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-yellow-500 shadow-[0_0_10px_orange]"></div>
+                               <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-green-500 shadow-[0_0_10px_green]"></div>
+                           </div>
+                           <div className="flex gap-2 bg-black/40 p-1 rounded-lg w-full md:w-auto overflow-x-auto no-scrollbar">
+                               {[
+                                   { id: 'creative', label: 'Visionário' },
+                                   { id: 'analytical', label: 'Analítico' },
+                                   { id: 'executive', label: 'Executivo' }
+                               ].map(mode => (
+                                   <button 
+                                       key={mode.id}
+                                       onClick={() => setOmniMode(mode.id as any)}
+                                       className={`flex-1 md:flex-none px-3 py-2 rounded-md text-[9px] md:text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${omniMode === mode.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                   >
+                                       {mode.label}
+                                   </button>
+                               ))}
+                           </div>
+                       </div>
+
+                       {/* Input Area */}
+                       <div className="flex-grow flex flex-col relative group">
+                           <textarea 
+                               value={omniInput}
+                               onChange={(e) => setOmniInput(e.target.value)}
+                               placeholder="> Insira seu comando mestre aqui..."
+                               className="w-full bg-transparent border-none text-indigo-50 placeholder-slate-700 text-lg md:text-2xl p-0 focus:ring-0 resize-none font-mono leading-relaxed flex-grow outline-none h-40 md:h-auto"
+                           />
+
+                           {omniImages.length > 0 && (
+                               <div className="flex gap-4 mt-6 overflow-x-auto pb-2">
+                                   {omniImages.map((src, i) => (
+                                       <div key={i} className="w-20 h-20 md:w-24 md:h-24 rounded-xl overflow-hidden border border-indigo-500/30 shadow-[0_0_20px_rgba(99,102,241,0.2)] flex-shrink-0">
+                                           <img src={src} className="w-full h-full object-cover" />
+                                       </div>
+                                   ))}
+                               </div>
+                           )}
+                       </div>
+
+                       {/* Action Bar */}
+                       <div className="flex flex-col md:flex-row justify-between items-center mt-6 md:mt-8 pt-6 border-t border-white/5 gap-4">
+                           <div className="flex items-center gap-4 w-full md:w-auto">
+                               <button 
+                                 onClick={() => omniFileRef.current?.click()}
+                                 className="text-slate-500 hover:text-indigo-400 transition-colors flex items-center gap-2 text-xs font-bold uppercase tracking-wider group w-full md:w-auto justify-center md:justify-start border border-slate-800 rounded-lg p-3 md:border-none md:p-0"
+                               >
+                                   <div className="w-6 h-6 md:w-8 md:h-8 rounded-full md:border border-slate-700 flex items-center justify-center group-hover:border-indigo-500 group-hover:bg-indigo-500/10">
+                                      <Plus size={14} className="md:w-4 md:h-4" />
+                                   </div>
+                                   Adicionar Visual
+                               </button>
+                               <input type="file" ref={omniFileRef} className="hidden" accept="image/*" multiple onChange={handleOmniFile} />
+                           </div>
+                           
+                           <button 
+                             onClick={handleOmniSubmit}
+                             disabled={isOmniLoading}
+                             className={`w-full md:w-auto px-8 py-3 md:px-10 md:py-4 rounded-xl font-black text-xs md:text-sm flex items-center justify-center gap-3 transition-all ${isOmniLoading ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_30px_rgba(79,70,229,0.4)] hover:scale-105 active:scale-95'}`}
+                           >
+                               {isOmniLoading ? <Loader2 size={16} className="animate-spin" /> : <Command size={16} />}
+                               {isOmniLoading ? 'PROCESSANDO...' : 'EXECUTAR'}
+                           </button>
+                       </div>
+
+                       {omniResponse && (
+                           <div ref={omniResultRef} className="mt-8 pt-8 border-t border-indigo-500/30 animate-fade-in pb-10">
+                               <div className="flex items-center gap-2 mb-4 text-indigo-400 text-xs font-bold uppercase tracking-widest">
+                                   <Aperture size={14} className="animate-spin-slow" /> Resposta do Núcleo
+                               </div>
+                               <pre className="whitespace-pre-wrap font-mono text-xs md:text-base text-indigo-100/90 leading-relaxed overflow-x-auto">{omniResponse}</pre>
+                           </div>
+                       )}
                    </div>
-                   <div>
-                       <h2 className="text-xl md:text-2xl font-bold text-slate-900 font-heading">Caixa de Ferramentas</h2>
-                       <p className="text-slate-500 font-medium text-sm md:text-base">Agilidade para o dia a dia.</p>
-                   </div>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 scene-3d">
-                   {standardTemplates.map(template => renderCard(template, false))}
-                </div>
-             </div>
-          </RevealSection>
-
-          {/* FOOTER CTA - HYPER MARKETING STYLE */}
-          {!isSubscriber && (
-            <RevealSection delay={300}>
-                <div className="relative rounded-[2rem] md:rounded-[3rem] p-8 md:p-24 text-center text-white overflow-hidden shadow-2xl group border-4 border-white/20 bg-[#0F172A] isolate transform hover:scale-[1.01] transition-transform duration-500">
-                    {/* Intense Background Gradients */}
-                    <div className="absolute top-0 right-0 w-[400px] md:w-[800px] h-[400px] md:h-[800px] bg-indigo-600 rounded-full blur-[100px] md:blur-[150px] opacity-50 -mr-20 -mt-20 md:-mr-40 md:-mt-40 animate-pulse-soft"></div>
-                    <div className="absolute bottom-0 left-0 w-[300px] md:w-[600px] h-[300px] md:h-[600px] bg-fuchsia-600 rounded-full blur-[100px] md:blur-[150px] opacity-40 -ml-10 -mb-10 md:-ml-20 md:-mb-20"></div>
-                    <div className="absolute inset-0 bg-grid-pattern opacity-20"></div>
-                    
-                    <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center">
-                        <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-4 py-1.5 md:px-6 md:py-2 rounded-full border border-white/20 mb-6 md:mb-10 shadow-[0_0_30px_rgba(255,255,255,0.2)]">
-                            <Sparkles size={16} className="text-yellow-300 fill-yellow-300" />
-                            <span className="text-xs md:text-base font-bold tracking-wider uppercase text-white">Oferta por Tempo Limitado</span>
-                        </div>
-                        
-                        <h2 className="text-4xl md:text-7xl font-black mb-6 md:mb-8 font-heading leading-[0.9]">
-                            Não fique para trás. <br/>
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-white to-fuchsia-300 drop-shadow-lg">Lidere o mercado.</span>
-                        </h2>
-                        
-                        <p className="text-indigo-100 mb-8 md:mb-12 text-lg md:text-2xl font-light opacity-90 max-w-2xl mx-auto leading-relaxed">
-                           A inteligência artificial não vai substituir você. <br/>
-                           <strong className="text-white font-bold">Quem usa IA vai substituir quem não usa.</strong>
-                        </p>
-                        
-                        <Link to="/pricing" className="w-full sm:w-auto">
-                            <button className="w-full bg-white text-indigo-950 font-black py-4 md:py-6 px-8 md:px-16 rounded-2xl hover:bg-indigo-50 transition-all shadow-[0_0_60px_-15px_rgba(255,255,255,0.7)] hover:scale-105 active:scale-95 text-lg md:text-2xl flex items-center justify-center gap-3 border-4 border-white/50 btn-shine ring-4 ring-indigo-500/30">
-                                <Zap size={24} fill="currentColor" className="text-indigo-600 md:w-7 md:h-7" />
-                                DESBLOQUEAR TUDO
-                            </button>
-                        </Link>
-                    </div>
-                </div>
-            </RevealSection>
-          )}
-
+              </div>
+          </div>
       </div>
     </div>
   );

@@ -18,7 +18,6 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Watchdog para evitar carregamento infinito
   useEffect(() => {
     let timer: any;
     if (loading) {
@@ -32,17 +31,6 @@ const Login: React.FC = () => {
     return () => clearTimeout(timer);
   }, [loading]);
 
-  const checkDeviceIntegrity = async (): Promise<boolean> => {
-      // 1. Verifica LocalStorage (Fingerprint Simples)
-      const hasAccount = localStorage.getItem('acp_user_registered');
-      if (hasAccount) {
-          setErrorMsg("Este dispositivo já possui uma conta gratuita registrada. Faça login.");
-          setIsSignUp(false);
-          return false;
-      }
-      return true;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -50,215 +38,171 @@ const Login: React.FC = () => {
 
     try {
       if (isSignUp) {
-        // --- BLOQUEIO DE MULTI-CONTAS ---
-        const allowed = await checkDeviceIntegrity();
-        if (!allowed) {
-            setLoading(false);
-            return;
-        }
-
-        // --- LÓGICA DE CADASTRO ---
         const res = await signUp(email, password, name);
-        
         if (res.success) {
-           // Marca o dispositivo como usado
-           localStorage.setItem('acp_user_registered', 'true');
-
-           // 1. Sessão criada? Vai pro dashboard
            if (res.session) {
                navigate('/', { replace: true });
                return;
            }
-
-           // 2. Sem sessão? Tenta logar manualmente
            const loginRes = await login(email, password);
-           
            if (loginRes.success) {
              navigate('/', { replace: true });
            } else {
-             if (loginRes.error?.toLowerCase().includes("email not confirmed")) {
-                 setShowConfirmation(true);
-             } else {
-                 setShowConfirmation(true); 
-             }
+             setShowConfirmation(true);
            }
         } else {
-           const errLower = res.error?.toLowerCase() || "";
-           if (errLower.includes("already registered") || errLower.includes("unique constraint")) {
-               setErrorMsg("E-mail já cadastrado. Tente fazer login.");
-               setIsSignUp(false);
-           } else {
-               setErrorMsg(res.error || "Erro ao criar conta.");
-           }
+           setErrorMsg(res.error || "Erro ao criar conta.");
         }
       } else {
-        // --- LÓGICA DE LOGIN ---
         const res = await login(email, password);
         if (res.success) {
+          // Redireciona diretamente para a página anterior ou para a raiz (Dashboard)
           const from = (location.state as any)?.from?.pathname || '/';
           navigate(from, { replace: true });
         } else {
-          const errLower = res.error?.toLowerCase() || "";
-          if (errLower.includes("invalid login credentials")) {
-             setErrorMsg("E-mail ou senha incorretos.");
-          } else if (errLower.includes("email not confirmed")) {
-             setErrorMsg("Confirme seu e-mail para acessar.");
-             setShowConfirmation(true);
-          } else {
-             setErrorMsg(res.error || "Erro ao entrar. Tente novamente.");
-          }
+          setErrorMsg(res.error || "Erro ao entrar.");
         }
       }
     } catch (err: any) {
       console.error(err);
-      setErrorMsg("Ocorreu um erro inesperado. Verifique sua internet.");
+      setErrorMsg("Ocorreu um erro inesperado.");
     } finally {
-      if (location.pathname === '/login') {
-          setLoading(false);
-      }
+      setLoading(false);
     }
   };
 
   if (showConfirmation) {
       return (
-        <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center py-8">
-            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-12 max-w-lg w-full text-center animate-fade-in">
-                <div className="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+        <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center py-8 px-4">
+            <div className="bg-white rounded-[2rem] md:rounded-[3rem] shadow-2xl border border-slate-200 p-8 md:p-16 max-w-lg w-full text-center animate-fade-in">
+                <div className="w-20 h-20 md:w-24 md:h-24 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-8 md:mb-10 animate-pulse">
                     <Send size={40} />
                 </div>
-                <h2 className="text-3xl font-bold text-slate-900 mb-4 font-heading">Verifique seu E-mail</h2>
-                <p className="text-slate-600 text-lg mb-8">
-                    Enviamos um link de confirmação para <strong>{email}</strong>. 
-                    <br/>Clique no link para ativar sua conta.
+                <h2 className="text-3xl md:text-4xl font-black text-slate-950 mb-4 md:mb-6 font-heading tracking-tighter">Verifique seu E-mail</h2>
+                <p className="text-slate-600 text-lg md:text-xl mb-8 md:mb-12 leading-relaxed">
+                    Enviamos um link de confirmação para <br/><strong>{email}</strong>. 
                 </p>
-                <div className="flex flex-col gap-3">
-                    <Button onClick={() => setShowConfirmation(false)} variant="outline">
-                        Voltar para Login
-                    </Button>
-                </div>
+                <Button onClick={() => setShowConfirmation(false)} variant="outline" className="w-full h-14 md:h-16 rounded-2xl">
+                    Voltar para Login
+                </Button>
             </div>
         </div>
       );
   }
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center py-8">
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col md:flex-row max-w-5xl w-full mx-auto animate-fade-in">
+    <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center py-4 md:py-8 px-4">
+      <div className="bg-white rounded-[2rem] md:rounded-[4rem] shadow-3xl border border-slate-100 overflow-hidden flex flex-col md:flex-row max-w-6xl w-full mx-auto animate-fade-in">
         
         {/* Form Section */}
-        <div className="p-8 md:p-12 md:w-1/2 flex flex-col justify-center">
-          
-          <Link to="/" className="inline-flex items-center text-sm text-slate-500 hover:text-indigo-600 mb-6 transition-colors group">
-            <ArrowLeft className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" />
-            Voltar para o site
+        <div className="p-8 md:p-20 md:w-1/2 flex flex-col justify-center bg-white order-2 md:order-1">
+          <Link to="/" className="inline-flex items-center text-xs md:text-sm font-black text-slate-400 hover:text-indigo-600 mb-8 md:mb-12 transition-colors group uppercase tracking-widest">
+            <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
+            Voltar ao site
           </Link>
 
-          <div className="text-center md:text-left mb-8">
-            <h2 className="text-3xl font-bold text-slate-900 mb-2 font-heading">
-              {isSignUp ? 'Criar Conta Grátis' : 'Bem-vindo(a) de volta'}
+          <div className="text-left mb-8 md:mb-12">
+            <h2 className="text-3xl md:text-5xl font-black text-slate-950 mb-3 md:mb-4 font-heading tracking-tighter leading-tight">
+              {isSignUp ? 'Criar Conta Elite' : 'Acesse seu Estúdio'}
             </h2>
-            <p className="text-slate-600 text-lg">
-              {isSignUp ? 'Junte-se a elite de criadores com IA.' : 'Acesse sua conta para continuar criando.'}
+            <p className="text-slate-500 text-base md:text-xl font-medium">
+              A inteligência artificial de última geração ao seu comando.
             </p>
           </div>
 
-          <div className="space-y-6">
-            
-            <form className="space-y-5" onSubmit={handleSubmit}>
-              
-              {errorMsg && (
-                <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-100 flex items-center gap-3 animate-fade-in">
-                   <div className="bg-red-100 p-1 rounded-full shrink-0"><ShieldAlert size={16} /></div>
-                   <span className="font-medium">{errorMsg}</span>
-                </div>
-              )}
+          <form className="space-y-5 md:space-y-6" onSubmit={handleSubmit}>
+            {errorMsg && (
+              <div className="bg-red-50 text-red-600 p-4 md:p-5 rounded-2xl text-xs md:text-sm border border-red-100 flex items-center gap-3 animate-fade-in">
+                 <ShieldAlert size={20} />
+                 <span className="font-bold">{errorMsg}</span>
+              </div>
+            )}
 
-              {isSignUp && (
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">Nome Completo</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <User className="h-5 w-5 text-slate-400" />
-                    </div>
-                    <input 
-                        type="text" 
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="Como gostaria de ser chamado?"
-                        className="w-full p-3.5 pl-10 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                        required
-                    />
-                  </div>
-                </div>
-              )}
-
+            {isSignUp && (
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">E-mail</label>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Nome Completo</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                     <Mail className="h-5 w-5 text-slate-400" />
-                  </div>
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 h-5 w-5" />
                   <input 
-                    type="email" 
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="seu@email.com"
-                    className="w-full p-3.5 pl-10 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                    required
+                      type="text" 
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Como você quer ser chamado?"
+                      className="w-full p-4 md:p-5 pl-12 md:pl-14 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium text-sm md:text-base text-slate-900 placeholder:text-slate-400"
+                      required
                   />
                 </div>
               </div>
+            )}
 
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">Senha</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                     <Lock className="h-5 w-5 text-slate-400" />
-                  </div>
-                  <input 
-                    type="password" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Mínimo 6 caracteres"
-                    className="w-full p-3.5 pl-10 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                    required
-                    minLength={6}
-                  />
-                </div>
+            <div>
+              <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">E-mail Corporativo</label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 h-5 w-5" />
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="seu@email.com"
+                  className="w-full p-4 md:p-5 pl-12 md:pl-14 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium text-sm md:text-base text-slate-900 placeholder:text-slate-400"
+                  required
+                />
               </div>
+            </div>
 
-              <Button type="submit" className="w-full justify-center h-12 text-base shadow-lg shadow-indigo-200 mt-2" size="lg" isLoading={loading}>
-                {isSignUp ? 'Começar Agora' : 'Acessar Painel'}
-              </Button>
-            </form>
-          </div>
+            <div>
+              <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Senha Segura</label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 h-5 w-5" />
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full p-4 md:p-5 pl-12 md:pl-14 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium text-sm md:text-base text-slate-900 placeholder:text-slate-400"
+                  required
+                />
+              </div>
+            </div>
 
-          <div className="mt-8 text-center">
+            <Button type="submit" className="w-full h-14 md:h-16 text-lg md:text-xl rounded-2xl shadow-2xl btn-premium mt-4 md:mt-6" size="lg" isLoading={loading}>
+              {isSignUp ? 'CONSTRUIR MINHA CONTA' : 'ACESSAR AGORA'}
+            </Button>
+          </form>
+
+          <div className="mt-8 md:mt-12 text-center">
              <button 
-               onClick={() => { setIsSignUp(!isSignUp); setErrorMsg(''); setShowConfirmation(false); }}
-               className="text-indigo-600 hover:text-indigo-800 font-bold text-sm hover:underline transition-all"
+               onClick={() => { setIsSignUp(!isSignUp); setErrorMsg(''); }}
+               className="text-slate-400 hover:text-indigo-600 font-black text-xs uppercase tracking-widest transition-all p-2"
              >
-               {isSignUp ? 'Já possui conta? Fazer Login' : 'Não tem conta? Criar Grátis'}
+               {isSignUp ? 'Já faz parte da elite? Fazer Login' : 'Ainda não tem acesso? Criar Grátis'}
              </button>
           </div>
         </div>
 
-        {/* Side Panel */}
-        <div className="bg-slate-900 p-8 md:p-12 md:w-1/2 flex flex-col justify-center text-white relative overflow-hidden">
-             <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-600/30 rounded-full blur-[100px] -mr-20 -mt-20 animate-pulse-soft"></div>
-             <div className="absolute bottom-0 left-0 w-80 h-80 bg-purple-600/20 rounded-full blur-[80px] -mb-20 -ml-20"></div>
-             <div className="absolute inset-0 bg-grid-pattern opacity-10"></div>
+        {/* Side Panel (Hidden on very small mobile, shown on larger) */}
+        <div className="bg-slate-950 p-8 md:p-20 md:w-1/2 flex flex-col justify-center text-white relative overflow-hidden order-1 md:order-2 min-h-[300px] md:min-h-0">
+             <div className="absolute top-0 right-0 w-64 md:w-96 h-64 md:h-96 bg-indigo-600/20 rounded-full blur-[80px] md:blur-[120px] -mr-10 -mt-10"></div>
+             <div className="absolute bottom-0 left-0 w-48 md:w-80 h-48 md:h-80 bg-fuchsia-600/10 rounded-full blur-[60px] md:blur-[100px] -mb-10 -ml-10"></div>
 
-             <div className="relative z-10">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mb-8 shadow-xl shadow-indigo-500/20 border border-white/10">
-                   <Zap className="text-white w-8 h-8 fill-white" />
+             <div className="relative z-10 text-center md:text-left">
+                <div className="w-16 h-16 md:w-20 md:h-20 rounded-3xl bg-gradient-to-br from-indigo-500 to-fuchsia-600 flex items-center justify-center mb-6 md:mb-10 shadow-3xl transform rotate-6 mx-auto md:mx-0">
+                   <Zap className="text-white w-8 h-8 md:w-10 md:h-10 fill-white" />
                 </div>
-                <h3 className="text-3xl md:text-4xl font-heading font-black mb-6 leading-tight tracking-tight">
-                  Liberte seu potencial criativo com IA.
+                <h3 className="text-3xl md:text-6xl font-heading font-black mb-6 md:mb-10 leading-tight tracking-tighter">
+                  A próxima geração de criadores está aqui.
                 </h3>
-                <p className="text-slate-300 text-lg leading-relaxed mb-10 font-light">
-                  Acesse ferramentas de elite para criar documentos, sites e imagens em segundos.
-                </p>
+                <div className="space-y-4 md:space-y-6 hidden sm:block">
+                   <div className="flex items-center gap-4 text-slate-400 font-medium text-sm md:text-lg justify-center md:justify-start">
+                      <div className="w-2 h-2 rounded-full bg-indigo-500"></div> IA Gemini 3 Pro Elite
+                   </div>
+                   <div className="flex items-center gap-4 text-slate-400 font-medium text-sm md:text-lg justify-center md:justify-start">
+                      <div className="w-2 h-2 rounded-full bg-fuchsia-500"></div> Geração de Código & Sites
+                   </div>
+                   <div className="flex items-center gap-4 text-slate-400 font-medium text-sm md:text-lg justify-center md:justify-start">
+                      <div className="w-2 h-2 rounded-full bg-amber-500"></div> Suporte Consultivo 24/7
+                   </div>
+                </div>
              </div>
         </div>
       </div>

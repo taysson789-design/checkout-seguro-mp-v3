@@ -1,291 +1,117 @@
 
 import { UserAnswers, DocumentTemplate } from "../types";
-import { GoogleGenAI } from "@google/genai";
 
-// Tenta obter a chave do ambiente (Suporte a VITE_)
-const GOOGLE_API_KEY = process.env.API_KEY || (import.meta as any).env?.VITE_GOOGLE_API_KEY || "";
-
-/**
- * Função auxiliar para converter Blob em Base64
- */
-const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+// Função auxiliar para limpar código markdown
+const cleanCode = (text: string) => {
+  return text.replace(/```html/g, '').replace(/```/g, '').trim();
 };
 
 /**
- * GERAÇÃO DE TEXTO/CÓDIGO VIA GOOGLE GEMINI 2.5 FLASH (PREFERENCIAL)
- */
-async function generateTextGemini(systemPrompt: string, userPrompt: string): Promise<string> {
-  // Se não tiver chave, vai direto para o fallback sem tentar e causar erro
-  if (!GOOGLE_API_KEY) {
-    console.warn("Google API Key não encontrada. Usando Pollinations (Gratuito).");
-    return generateTextPollinations(systemPrompt, userPrompt);
-  }
-
-  try {
-    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
-    
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        { role: 'user', parts: [{ text: `SYSTEM INSTRUCTION: ${systemPrompt}\n\nUSER REQUEST: ${userPrompt}` }] }
-      ],
-      config: {
-        temperature: 0.7, 
-        topK: 40,
-        topP: 0.95,
-      }
-    });
-
-    if (!response.text) throw new Error("Resposta vazia do Gemini");
-    return response.text;
-  } catch (error) {
-    console.error("Erro na API Gemini (Tentando Fallback):", error);
-    return generateTextPollinations(systemPrompt, userPrompt);
-  }
-}
-
-/**
- * FALLBACK ROBUSTO: GERAÇÃO DE TEXTO VIA POLLINATIONS
+ * GERAÇÃO DE TEXTO/CÓDIGO VIA POLLINATIONS (GRÁTIS & ALTA QUALIDADE)
+ * Usa modelos como OpenAI/Claude via proxy gratuito.
  */
 async function generateTextPollinations(systemPrompt: string, userPrompt: string): Promise<string> {
-  const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
-
   try {
-    // TENTATIVA 1: POST request (Melhor para textos longos)
-    const response = await fetch('https://text.pollinations.ai/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: systemPrompt }, 
-          { role: 'user', content: userPrompt }
-        ],
-        model: 'openai', // Tenta modelo padrão
-        seed: Math.floor(Math.random() * 1000),
-      }),
-    });
-
-    if (response.ok) {
-        const text = await response.text();
-        if (text && text.length > 5) return text;
-    }
+    const fullPrompt = `${systemPrompt}\n\nCONTEXTO DO USUÁRIO:\n${userPrompt}`;
+    const encodedPrompt = encodeURIComponent(fullPrompt);
     
-    throw new Error("Falha no POST, tentando GET...");
-
+    // model=openai garante alta qualidade (GPT-4o ou similar no backend deles)
+    const response = await fetch(`https://text.pollinations.ai/${encodedPrompt}?model=openai&seed=${Math.floor(Math.random() * 1000)}`);
+    
+    if (!response.ok) throw new Error('Falha na Pollinations AI');
+    
+    const text = await response.text();
+    return text;
   } catch (error) {
-    console.warn("Erro no Pollinations POST, tentando método GET simplificado...", error);
-    
-    // TENTATIVA 2: GET request (Mais simples, URL encoded)
-    // Limita o tamanho para evitar erro de URI too long
-    const safePrompt = encodeURIComponent(fullPrompt.substring(0, 1500)); 
-    try {
-        const url = `https://text.pollinations.ai/${safePrompt}?model=openai`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Erro no Pollinations GET");
-        return await res.text();
-    } catch (finalError) {
-        console.error("Erro fatal na geração de texto:", finalError);
-        return "Desculpe, os serviços de IA estão instáveis no momento. Por favor, verifique sua conexão ou tente novamente em alguns segundos.";
-    }
+    console.error("Erro Pollinations:", error);
+    return "Ocorreu um erro ao conectar com a Inteligência Artificial. Por favor, tente novamente.";
   }
 }
 
 /**
- * GERAÇÃO DE IMAGEM VIA POLLINATIONS (FLUX)
+ * GERAÇÃO DE IMAGEM VIA POLLINATIONS (FLUX/SDXL)
  */
-async function generateImagePollinations(prompt: string, width: number = 1024, height: number = 1024): Promise<string> {
-  const safetyFilter = "safe content, no nsfw, no nudity, no violence, high quality";
-  // Simplifica o prompt para URL
-  const cleanPrompt = prompt.substring(0, 300).replace(/[^a-zA-Z0-9, ]/g, "");
-  const finalPrompt = `${cleanPrompt}, ${safetyFilter}`;
-  
-  const encodedPrompt = encodeURIComponent(finalPrompt);
-  const seed = Math.floor(Math.random() * 1000000);
-  
-  // URL Flux Otimizada
-  const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=flux&enhance=true`;
-
-  try {
-    // Tenta fazer um fetch apenas para validar se a imagem carrega (opcional, mas bom pra UX)
-    // Se falhar, retornamos a URL mesmo assim para o navegador tentar carregar no <img>
-    return url;
-  } catch (error) {
-    return url;
-  }
+async function generateImagePollinations(prompt: string): Promise<string> {
+  // Gera uma URL direta. O seed aleatório garante que a imagem mude a cada geração.
+  const encodedPrompt = encodeURIComponent(prompt);
+  // nologo=true remove marcas d'agua se possível
+  const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1000)}&model=flux`;
+  return imageUrl; 
 }
 
-/**
- * FUNÇÃO DE REFINAMENTO (CHAT DE EDIÇÃO)
- */
-export const refineDocumentContent = async (
-  currentContent: string, 
-  instruction: string, 
-  template: DocumentTemplate
-): Promise<string> => {
+export const generateDocumentContent = async (template: DocumentTemplate, answers: UserAnswers, isPro: boolean = false): Promise<string> => {
   
-  const isSite = template.outputType === 'SITE';
-  const isImage = template.outputType === 'IMAGE';
+  // 1. Construir Contexto
+  let context = "DADOS FORNECIDOS PELO USUÁRIO:\n";
+  let userPhotoBase64: string | null = null;
 
-  // --- REFINAMENTO DE IMAGEM ---
-  if (isImage) {
-      const promptSystem = `
-        You are an expert AI Art Prompt Engineer.
-        The user wants to CHANGE or EDIT an existing image.
-        USER INSTRUCTION: "${instruction}"
-        Create a NEW, complete prompt that incorporates the user's change request.
-        Output ONLY the raw prompt text.
-      `;
-      const newPrompt = await generateTextGemini(promptSystem, "Create refined prompt");
-      
-      let w = 1024;
-      let h = 1024;
-      if (instruction.toLowerCase().includes('banner') || instruction.toLowerCase().includes('capa')) {
-          w = 1280; h = 720;
+  for (const [id, val] of Object.entries(answers)) {
+      // Se for a foto do usuário (CV), guardamos a base64 mas NÃO enviamos pro prompt de texto pra não estourar limite de URL
+      if (id === 'user_photo' && Array.isArray(val) && val.length > 0) {
+          userPhotoBase64 = val[0];
+          context += `[FOTO DO PERFIL]: O usuário forneceu uma foto. Use a string '{{USER_PHOTO}}' no atributo src da tag img.\n`;
+      } else {
+          const step = template.steps.find(s => s.id === id);
+          if (step) context += `[${step.question}]: ${Array.isArray(val) ? val.join(', ') : val}\n`;
       }
-      
-      return await generateImagePollinations(newPrompt, w, h);
   }
+
+  // 2. Roteamento por Tipo de Saída
+  if (template.outputType === 'IMAGE') {
+     // Para imagem, o prompt deve ser descritivo visualmente
+     const prompt = `Best quality, masterpiece, ultra realistic, 8k. ${template.systemPrompt}. Context: ${context}`;
+     return await generateImagePollinations(prompt);
+  }
+
+  // 3. Geração de Texto/Site
+  let systemInstruction = `${template.systemPrompt}\n\nREGRAS ESTRUTURAIS (100% POWER):\n- Se for solicitado código ou site, use HTML5 + Tailwind CSS (via CDN) em um único arquivo.\n- Design deve ser EXTREMAMENTE moderno, profissional e de alto nível (Estilo Awwwards/Silicon Valley).\n- Use sombras (shadow-xl), bordas arredondadas (rounded-2xl), gradientes e tipografia premium.\n- Responda APENAS com o conteúdo final (o texto ou o código), sem introduções.`;
   
-  // --- REFINAMENTO DE TEXTO / SITE ---
-  const systemPrompt = isSite 
-    ? `Você é um Desenvolvedor Frontend Sênior.
-       EDITAR código HTML.
-       REGRAS: Retorne APENAS o código HTML corrigido. Mantenha bibliotecas (Tailwind).
-       INSTRUÇÃO: "${instruction}"`
-    : `Você é um Editor Chefe.
-       REESCREVER texto.
-       INSTRUÇÃO: "${instruction}"`;
-
-  const userPrompt = `
-    CONTEÚDO ATUAL:
-    ${currentContent.substring(0, 4000)} 
-    
-    (Texto truncado para caber no limite, mantenha o resto ou reescreva a parte solicitada)
-
-    SOLICITAÇÃO DE ALTERAÇÃO: "${instruction}"
-  `;
-
-  let text = await generateTextGemini(systemPrompt, userPrompt);
-
-  // Limpeza de código para sites
-  if (isSite) {
-    text = text.replace(/```html/g, '').replace(/```/g, '');
-    const docTypeIndex = text.indexOf('<!DOCTYPE html>');
-    if (docTypeIndex !== -1) text = text.substring(docTypeIndex);
-    if (!text.includes('<!DOCTYPE html>') && text.includes('<html')) text = '<!DOCTYPE html>\n' + text;
-    text = text.trim();
+  let result = await generateTextPollinations(systemInstruction, context);
+  
+  if (template.outputType === 'SITE') {
+      let code = cleanCode(result);
+      // INJEÇÃO PÓS-PROCESSAMENTO: Substitui o placeholder pela foto real
+      if (userPhotoBase64) {
+          // Tenta substituir variações comuns que a IA pode gerar
+          code = code.replace(/{{USER_PHOTO}}/g, userPhotoBase64)
+                     .replace(/%7B%7BUSER_PHOTO%7D%7D/g, userPhotoBase64)
+                     .replace(/src="[^"]*user_photo[^"]*"/gi, `src="${userPhotoBase64}"`);
+      }
+      return code;
   }
 
-  return text;
+  return result;
+};
+
+export const refineDocumentContent = async (current: string, instruction: string, template: DocumentTemplate): Promise<string> => {
+  const system = "Você é um editor sênior de classe mundial. Refine o conteúdo abaixo seguindo estritamente a instrução do usuário. Mantenha a formatação original (se for código HTML, mantenha a estrutura e melhore o design/conteúdo).";
+  const prompt = `CONTEÚDO ORIGINAL:\n${current}\n\nO QUE MUDAR (INSTRUÇÃO DO USUÁRIO):\n${instruction}`;
+  
+  const result = await generateTextPollinations(system, prompt);
+  
+  if (template.outputType === 'SITE') {
+    return cleanCode(result);
+  }
+  return result;
 };
 
 /**
- * FUNÇÃO PRINCIPAL DE GERAÇÃO
+ * NÚCLEO OMNI
  */
-export const generateDocumentContent = async (
-  template: DocumentTemplate,
-  answers: UserAnswers,
-  isPro: boolean = false 
-): Promise<string> => {
+export const omniCoreGenerate = async (prompt: string, images: string[], mode: 'creative' | 'analytical' | 'executive'): Promise<string> => {
   
-  // --- 1. IMAGEM (FLUX) ---
-  if (template.outputType === 'IMAGE') {
-    let rawUserInputs = "";
-    let width = 1024;
-    let height = 1024;
-    let style = "Photorealistic";
-
-    // Detecta Aspect Ratio do template Banner ou Geral
-    const ratioAnswer = answers['aspect_ratio'] || answers['platform_format'];
-
-    if (typeof ratioAnswer === 'string') {
-        if (ratioAnswer === '16:9') { width = 1280; height = 720; }
-        else if (ratioAnswer === '9:16') { width = 720; height = 1280; }
-        else if (ratioAnswer === '3:4') { width = 768; height = 1024; }
-        else if (ratioAnswer === '1:1') { width = 1024; height = 1024; }
-        else if (ratioAnswer === '4:1') { width = 1500; height = 375; }
-        else if (ratioAnswer === '3:1') { width = 1500; height = 500; }
-    }
-
-    for (const [stepId, answer] of Object.entries(answers)) {
-      if (stepId === 'image_style' || stepId === 'visual_style') {
-        style = answer as string;
-      } else if (stepId !== 'aspect_ratio' && stepId !== 'platform_format') {
-        const answerText = Array.isArray(answer) ? answer.join(', ') : answer;
-        rawUserInputs += `${answerText}, `;
-      }
-    }
-
-    // Simplifica a chamada para o prompt engineer para evitar falhas
-    const promptEngineeringSystem = `Create a detailed English image prompt based on: ${rawUserInputs}. Style: ${style}. Output ONLY the prompt.`;
-    const enhancedPrompt = await generateTextGemini(promptEngineeringSystem, "Optimize prompt");
-    
-    return await generateImagePollinations(enhancedPrompt, width, height);
+  let systemPrompt = "";
+  if (mode === 'creative') {
+    systemPrompt = "Modo Visionário: Respostas inspiradoras, artísticas, metafóricas e inovadoras.";
+  } else if (mode === 'analytical') {
+    systemPrompt = "Modo Analítico: Lógica pura, dados, precisão, listas e comparações.";
+  } else {
+    systemPrompt = "Modo Executivo: Estratégia de negócios, liderança, tom profissional, direto e focado em ROI.";
   }
 
-  // --- 2. TEXTO / SITE ---
-  let answersContext = "";
-  let userImageBase64: string | null = null;
-  let instagramImageUrl = "";
+  const context = images.length > 0 
+    ? `[O usuário enviou imagens, mas neste modo texto, foque na descrição que ele deu]. Pergunta: ${prompt}` 
+    : prompt;
 
-  if (template.id === 'instagram-post') {
-      const topic = answers['post_topic'] || 'lifestyle';
-      const promptSystem = `Create image prompt for Instagram: ${topic}`;
-      try {
-        const imgPrompt = await generateTextGemini(promptSystem, "Generate prompt");
-        instagramImageUrl = await generateImagePollinations(imgPrompt, 1024, 1024);
-      } catch (e) { console.warn("Erro img insta", e); }
-  }
-
-  for (const [stepId, answer] of Object.entries(answers)) {
-    const step = template.steps.find(s => s.id === stepId);
-    if (typeof answer === 'string' && answer.startsWith('data:image')) {
-        userImageBase64 = answer;
-        answersContext += `- ${step?.question || 'Imagem'}: [IMAGEM_USUARIO_FORNECIDA]\n`;
-    } else if (step) {
-      const answerText = Array.isArray(answer) ? answer.join(', ') : answer;
-      answersContext += `- ${step.question}: "${answerText}"\n`;
-    }
-  }
-
-  const isSite = template.outputType === 'SITE';
-  const fullPromptText = `
-    DADOS DO USUÁRIO:
-    ${answersContext}
-    
-    INSTRUÇÕES:
-    ${isSite 
-      ? 'Gere um site SINGLE-FILE HTML moderno. Use <script src="https://cdn.tailwindcss.com"></script>. Design Clean, Responsivo, Profissional. Use [[USER_IMAGE_SRC]] para imagens principais.' 
-      : 'Gere conteúdo rico, persuasivo e bem formatado em Markdown.'}
-  `;
-
-  let text = await generateTextGemini(template.systemPrompt, fullPromptText);
-
-  // Pós-Processamento
-  if (isSite) {
-    text = text.replace(/```html/g, '').replace(/```/g, '');
-    const docTypeIndex = text.indexOf('<!DOCTYPE html>');
-    if (docTypeIndex !== -1) text = text.substring(docTypeIndex);
-    if (!text.includes('<!DOCTYPE html>') && text.includes('<html')) text = '<!DOCTYPE html>\n' + text;
-    text = text.trim();
-
-    if (userImageBase64) {
-        text = text.replace(/\[\[USER_IMAGE_SRC\]\]/g, userImageBase64);
-        if (!text.includes(userImageBase64)) text = text.replace(/src="https:\/\/via\.placeholder\.com\/.*?"/g, `src="${userImageBase64}"`);
-    } else {
-        text = text.replace(/\[\[USER_IMAGE_SRC\]\]/g, "https://images.unsplash.com/photo-1497215728101-856f4ea42174?w=1080&q=80");
-    }
-  }
-
-  if (template.id === 'instagram-post' && instagramImageUrl) {
-      text += `\n\n[[GENERATED_IMAGE_URL:${instagramImageUrl}]]`;
-  }
-
-  return text;
+  return await generateTextPollinations(systemPrompt, context);
 };

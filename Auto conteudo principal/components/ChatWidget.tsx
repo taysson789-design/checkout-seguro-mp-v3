@@ -2,7 +2,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send, Bot, Sparkles, ChevronRight, Zap, Phone, RefreshCw } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import { GoogleGenAI } from "@google/genai";
 import { DOCUMENT_TEMPLATES, PLANS, APP_NAME, SUPPORT_WHATSAPP } from '../constants';
+
+// Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 interface Message {
   id: string;
@@ -23,7 +27,6 @@ export const ChatWidget: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
-  // Rola para baixo automaticamente
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -34,7 +37,6 @@ export const ChatWidget: React.FC = () => {
     }
   }, [messages, isOpen]);
 
-  // Detecta onde o usuário está para dar contexto à IA
   useEffect(() => {
     if (location.pathname.startsWith('/generate/')) {
         const templateId = location.pathname.split('/generate/')[1];
@@ -66,15 +68,13 @@ export const ChatWidget: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // --- CONTEXTO GLOBAL DO SITE ---
       const toolsList = DOCUMENT_TEMPLATES.map(t => `- ${t.title}: ${t.description}`).join('\n');
-      const plansList = PLANS.map(p => `- ${p.name}: R$ ${p.price} (${p.description}) - Detalhes: ${p.features.map(f => f.split('||')[0]).join(', ')}`).join('\n');
+      const plansList = PLANS.map(p => `- ${p.name}: R$ ${p.price} (${p.description}) - Detalhes: ${p.features.join(', ')}`).join('\n');
 
-      // Prompt do Sistema Otimizado com Contexto Total
       let systemInstruction = `
           Você é o Assistente Virtual Oficial da plataforma ${APP_NAME}.
           
-          SUA BASE DE CONHECIMENTO (Memorize isso):
+          SUA BASE DE CONHECIMENTO:
           
           1. FERRAMENTAS DISPONÍVEIS:
           ${toolsList}
@@ -87,8 +87,6 @@ export const ChatWidget: React.FC = () => {
 
           DIRETRIZES:
           - Seja um consultor especialista, vendedor e suporte técnico.
-          - Se perguntarem preços, use a lista acima.
-          - Se perguntarem "o que o site faz", resuma as ferramentas.
           - Respostas curtas (máx 3 frases), use emojis e seja prestativo.
           - O Plano Master permite Agentes 360º e imagens melhores.
       `;
@@ -97,32 +95,27 @@ export const ChatWidget: React.FC = () => {
           systemInstruction += `\nCONTEXTO IMEDIATO DO USUÁRIO: ${contextPrompt}`;
       }
 
-      // Monta histórico de mensagens
-      const apiMessages = [
-        { role: 'system', content: systemInstruction },
-        ...messages.slice(-6).map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text })),
-        { role: 'user', content: input }
-      ];
+      // Gemini history roles are 'user' and 'model'
+      const history = messages.slice(-6).map(m => ({
+        role: m.role,
+        parts: [{ text: m.text }]
+      }));
+      history.push({ role: 'user', parts: [{ text: input }] });
 
-      // Chamada para API Gratuita (Pollinations)
-      const response = await fetch('https://text.pollinations.ai/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: apiMessages,
-          model: 'openai', 
-          seed: Math.floor(Math.random() * 1000)
-        })
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: history,
+        config: {
+          systemInstruction: systemInstruction,
+        },
       });
 
-      if (!response.ok) throw new Error("Erro na API");
-
-      const text = await response.text();
+      const text = response.text || "Estou reconectando meus neurônios... Tente novamente em alguns segundos!";
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: text }]);
 
     } catch (error: any) {
       console.error("Chat error:", error);
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Estou reconectando meus neurônios... Tente novamente em alguns segundos!" }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', text: "Desculpe, tive um problema ao processar sua mensagem." }]);
     } finally {
       setIsLoading(false);
     }
@@ -135,7 +128,6 @@ export const ChatWidget: React.FC = () => {
     }
   };
 
-  // Bloquear rolagem do body quando chat mobile estiver aberto
   useEffect(() => {
     if (window.innerWidth < 768 && isOpen) {
         document.body.style.overflow = 'hidden';
@@ -147,25 +139,18 @@ export const ChatWidget: React.FC = () => {
 
   return (
     <div className="font-sans">
-      
-      {/* JANELA DO CHAT (Mobile: Fullscreen, Desktop: Widget) */}
       <div 
         className={`
             fixed z-[9999] transition-all duration-300 ease-in-out
             bg-white overflow-hidden flex flex-col shadow-2xl border border-slate-200
-            
             md:right-4 md:bottom-20 md:w-[360px] md:rounded-2xl md:max-h-[75vh] md:h-[480px]
             md:origin-bottom-right
-            
-            ${/* Mobile Styles: Fullscreen Fixed */ ''}
             left-0 right-0 bottom-0 top-0 rounded-none w-full h-[100dvh] md:top-auto md:left-auto
-
             ${isOpen 
                 ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' 
                 : 'opacity-0 scale-95 translate-y-4 pointer-events-none md:translate-y-10'}
         `}
       >
-        {/* Header */}
         <div className="bg-gradient-to-r from-slate-900 to-indigo-900 p-4 md:p-3 flex items-center justify-between shrink-0 shadow-md">
             <div className="flex items-center gap-3 md:gap-2.5">
                 <div className="relative">
@@ -182,7 +167,6 @@ export const ChatWidget: React.FC = () => {
                 </div>
             </div>
             <div className="flex items-center gap-2 md:gap-1">
-                 {/* Botão de WhatsApp/Suporte */}
                  <a 
                     href={`https://wa.me/${SUPPORT_WHATSAPP}`}
                     target="_blank" 
@@ -201,7 +185,6 @@ export const ChatWidget: React.FC = () => {
             </div>
         </div>
 
-        {/* Aviso de Contexto (Se houver) */}
         {currentToolName && (
             <div className="bg-indigo-50 px-4 py-2 md:px-3 md:py-1.5 border-b border-indigo-100 flex items-center justify-between shrink-0">
                 <span className="text-xs md:text-[10px] text-indigo-700 font-medium flex items-center gap-1">
@@ -210,7 +193,6 @@ export const ChatWidget: React.FC = () => {
             </div>
         )}
 
-        {/* Área de Mensagens */}
         <div className="flex-1 overflow-y-auto p-4 md:p-3 space-y-4 md:space-y-3 bg-slate-50 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
             {messages.map((msg) => (
                 <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
@@ -246,7 +228,6 @@ export const ChatWidget: React.FC = () => {
             <div ref={messagesEndRef} />
         </div>
 
-        {/* Área de Input - Otimizada para Touch */}
         <div className="p-3 md:p-2 bg-white border-t border-slate-100 shrink-0 pb-safe">
             <div className="relative flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-1 py-1 focus-within:ring-2 focus-within:ring-indigo-100 focus-within:border-indigo-400 transition-all">
                 <input
@@ -255,7 +236,6 @@ export const ChatWidget: React.FC = () => {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Digite sua mensagem..."
-                    // text-base evita zoom no iPhone
                     className="flex-1 bg-transparent border-none focus:ring-0 text-base md:text-xs text-slate-800 placeholder:text-slate-400 pl-4 md:pl-3 py-3 md:py-2 h-12 md:h-9"
                     disabled={isLoading}
                 />
@@ -273,7 +253,6 @@ export const ChatWidget: React.FC = () => {
         </div>
       </div>
 
-      {/* BOTÃO FLUTUANTE (FAB) - Fixed Bottom Right */}
       <button 
         onClick={() => setIsOpen(!isOpen)}
         className={`
@@ -289,7 +268,6 @@ export const ChatWidget: React.FC = () => {
         ) : (
             <>
                 <MessageCircle className="text-white w-7 h-7 fill-white/20" />
-                {/* Notification Dot */}
                 <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 border-2 border-white rounded-full flex items-center justify-center">
                     <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
                 </span>
@@ -297,7 +275,6 @@ export const ChatWidget: React.FC = () => {
         )}
       </button>
       
-      {/* Overlay para fechar no desktop ao clicar fora (opcional, mas bom pra UX) */}
       {isOpen && window.innerWidth >= 768 && (
         <div className="fixed inset-0 z-[9998]" onClick={() => setIsOpen(false)}></div>
       )}

@@ -29,7 +29,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: data.email || email,
           name: data.full_name || email?.split('@')[0] || 'Usuário',
           isPro: data.is_pro || false,
-          credits: data.credits ?? 3, 
+          credits: data.credits ?? 5, // PADRÃO: 5 CRÉDITOS
           isAdmin: data.is_admin || false,
           planType: data.plan_type || 'free',
           subscriptionDate: data.subscription_date,
@@ -43,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: email,
         name: userMetadata?.full_name || email.split('@')[0],
         isPro: false,
-        credits: 3, 
+        credits: 5, // PADRÃO: 5 CRÉDITOS
         isAdmin: false,
         planType: 'free'
     };
@@ -59,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         let userProfile = mapProfileToUser(data, email);
 
         // --- LÓGICA DE RESET DE CRÉDITOS (PLANO GRÁTIS) ---
-        // Regra: Reseta para 3 créditos a cada 3 dias
+        // Regra: Reseta para 5 créditos a cada 3 dias
         if (!userProfile.isPro && userProfile.planType === 'free') {
             const now = new Date();
             const lastReset = data.last_free_reset ? new Date(data.last_free_reset) : new Date(0);
@@ -67,13 +67,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (diffDays >= 3) {
                 const updates = {
-                    credits: 3, // Reseta para 3
+                    credits: 5, // Reseta para 5
                     last_free_reset: now.toISOString(),
                     plan_type: 'free'
                 };
                 // Atualiza em background
                 supabase.from('profiles').update(updates).eq('id', userId).then();
-                userProfile.credits = 3;
+                userProfile.credits = 5;
                 userProfile.lastFreeReset = updates.last_free_reset;
             }
         }
@@ -165,19 +165,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) return { success: false, error: error.message };
         
         if (data.session?.user) {
-            // Inicializa com 3 créditos
+            // Inicializa com 5 créditos
             const newUser: User = {
                 id: data.session.user.id,
                 email: email,
                 name: name,
                 isPro: false,
-                credits: 3, 
+                credits: 5, 
                 isAdmin: false,
                 planType: 'free'
             };
             
-            // Força a atualização inicial no banco para garantir os 3 créditos
-            await supabase.from('profiles').update({ credits: 3 }).eq('id', data.session.user.id);
+            // Força a atualização inicial no banco para garantir os 5 créditos
+            await supabase.from('profiles').update({ credits: 5 }).eq('id', data.session.user.id);
             
             setUser(newUser);
         }

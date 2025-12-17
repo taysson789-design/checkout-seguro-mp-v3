@@ -1,5 +1,8 @@
+
 {
   "name": "AutoConteúdo Pro",
-  "description": "Plataforma SaaS de geração de documentos inteligentes com consultoria via IA.",
-  "requestFramePermissions": []
+  "description": "Plataforma SaaS de geração de documentos inteligentes e cursos com IA de elite.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

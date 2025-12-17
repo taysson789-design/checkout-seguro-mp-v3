@@ -5,7 +5,8 @@ export enum QuestionType {
   SELECT = 'SELECT',
   MULTI_SELECT = 'MULTI_SELECT',
   DATE = 'DATE',
-  IMAGE_UPLOAD = 'IMAGE_UPLOAD', // New Type
+  IMAGE_UPLOAD = 'IMAGE_UPLOAD',
+  MULTI_IMAGE_UPLOAD = 'MULTI_IMAGE_UPLOAD'
 }
 
 export interface Option {
@@ -21,6 +22,7 @@ export interface WizardStep {
   options?: Option[];
   placeholder?: string;
   required?: boolean;
+  maxFiles?: number;
 }
 
 export interface DocumentTemplate {
@@ -31,7 +33,10 @@ export interface DocumentTemplate {
   color: string;
   outputType: 'TEXT' | 'IMAGE' | 'SITE'; 
   steps: WizardStep[];
-  systemPrompt: string; 
+  systemPrompt: string;
+  category?: 'Curriculo' | 'Marketing' | 'Business' | 'Jurídico' | 'Criativo';
+  minPlan?: 'free' | 'pro' | 'master';
+  oneTimePrice?: number; // Preço para compra única
 }
 
 export interface UserAnswers {
@@ -48,14 +53,13 @@ export interface GeneratedDocument {
   type?: 'TEXT' | 'IMAGE' | 'SITE'; 
 }
 
-// Added subscription fields
 export interface UserProfile {
   email: string;
   name: string;
   isPro: boolean;
   credits: number;
   isAdmin?: boolean;
-  planType?: 'free' | 'monthly' | 'master_monthly' | 'yearly' | 'credits_pack';
+  planType?: 'free' | 'monthly' | 'master_monthly' | 'yearly' | 'credits_pack' | 'individual_purchase';
   subscriptionDate?: string;
-  lastFreeReset?: string; // New field to track the 3-day reset rule
+  lastFreeReset?: string;
 }
